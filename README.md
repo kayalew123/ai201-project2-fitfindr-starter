@@ -55,22 +55,22 @@ Fields stored in session:
 
 **User query:** "looking for a vintage graphic tee under $30"
 
-**Step 1 — search_listings**
+**Step 1: search_listings**
 - Input: description="vintage graphic tee", size=None, max_price=30.0
 - Why: the query contains price information and item keywords, so the loop parses and searches first
 - Output: list of matching listings sorted by relevance; top result is "Y2K Baby Tee — Butterfly Print" at $18.0 on Depop
 
-**Step 2 — suggest_outfit**
+**Step 2: suggest_outfit**
 - Input: new_item=Y2K Baby Tee dict, wardrobe=example wardrobe (10 items)
 - Why: a match was found, so the loop proceeds to styling; selected_item flows directly from search results
 - Output: two outfit combinations naming specific wardrobe pieces — baggy straight-leg jeans with chunky white sneakers for a retro look, and wide-leg khaki trousers with black combat boots for a chic contrast
 
-**Step 3 — create_fit_card**
+**Step 3: create_fit_card**
 - Input: outfit=the suggestion string above, new_item=Y2K Baby Tee dict
 - Why: outfit suggestion is populated, so the loop generates a shareable caption
 - Output: "I'm obsessed with my new Y2K Baby Tee that I scored on depop for $18.0 - it's giving me all the nostalgic feels. I paired it with some baggy straight-leg jeans and black combat boots for a chill, laid-back vibe, and I'm totally feeling the early 2000s nostalgia. The butterfly print is everything and more, and I love how it adds a playful touch to my overall look."
 
-**Final output to user:** three panels populate — the listing details, the outfit suggestion naming their wardrobe pieces, and the fit card caption.
+**Final output to user:** three panels populate: the listing details, the outfit suggestion naming their wardrobe pieces, and the fit card caption.
 
 ---
 
@@ -98,10 +98,10 @@ The spec described the planning loop as having a distinct "parse query" step tha
 
 ## AI Usage
 
-**Instance 1 — size normalization edge cases**
+**Instance 1: size normalization edge cases**
 
-While writing `search_listings` I ran into the messy size field — values like "S/M", "XL (oversized)", and "One Size" were not matching correctly with a basic string comparison. I asked Claude whether stripping parenthetical qualifiers before splitting would cover most cases. It confirmed the approach and I added the regex sub to handle that. I ran the tool manually against several listings with non-standard sizes to verify it was working before moving on.
+While writing `search_listings` I ran into the messy size field  values like "S/M", "XL (oversized)", and "One Size" were not matching correctly with a basic string comparison. I asked Claude whether stripping parenthetical qualifiers before splitting would cover most cases. It confirmed the approach and I added the regex sub to handle that. I ran the tool manually against several listings with non-standard sizes to verify it was working before moving on.
 
-**Instance 2 — planning loop structure review**
+**Instance 2: planning loop structure review**
 
 After writing `run_agent()` I asked Claude to look at my session dict flow and confirm that `selected_item` was being passed by reference into `suggest_outfit` rather than re-queried. It pointed out that the way I had it written was fine but suggested printing the session at the end of a test run to visually verify the state — which I did. I did not change the core logic, just used it as a sanity check.
