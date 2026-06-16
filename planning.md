@@ -139,66 +139,64 @@ Additional robustness (not required, but implemented): both LLM tools wrap their
 
 
 Architecture
-
-              User query  +  wardrobe choice
-                     │
-                     ▼
-         ┌───────────────────────────┐
-         │      PLANNING LOOP         │◄──────────────┐
-         │      (run_agent)          │               │
-         └───────────────────────────┘               │
-                     │                                │  reads / writes
-                     │  parse query → description,    │  every field
-                     │  size, max_price               ▼
-                     │                        ┌──────────────────┐
-                     ▼                        │  SESSION STATE   │
-        search_listings(description,          │  query           │
-                        size, max_price)      │  parsed          │
-                     │                        │  search_results  │
-        ┌────────────┴───────────┐            │  selected_item   │
-        │ results == []          │            │  wardrobe        │
-        │   ▼                    │            │  outfit_suggest. │
-        │ [ERROR] set            │            │  fit_card        │
-        │ session["error"],      │            │  error           │
-        │ RETURN early ──────────┼──────────► └──────────────────┘
-        │                        │
-        │ results == [item, ...] │
-        ▼                        │
-   selected_item = results[0]    │
-        │                        │
-        ▼                        │
-   suggest_outfit(selected_item, wardrobe)
-        │  (empty wardrobe → general advice branch, still returns a string)
-        ▼
-   session["outfit_suggestion"] = "..."
-        │
-        ▼
-   create_fit_card(outfit_suggestion, selected_item)
-        │  (empty outfit → returns error string, no crash)
-        ▼
-   session["fit_card"] = "..."
-        │
-        ▼
-   RETURN session  ──►  app.py maps to 3 panels
-
+User query + wardrobe choice
+        |
+        v
++---------------------------+          +-----------------------+
+|      PLANNING LOOP        |<-------->|     SESSION STATE     |
+|      (run_agent)          |          |  query                |
++---------------------------+          |  parsed               |
+        |                             |  search_results       |
+        |  parse query ->             |  selected_item        |
+        |  description,               |  wardrobe             |
+        |  size, max_price            |  outfit_suggestion    |
+        |                             |  fit_card             |
+        v                             |  error                |
+search_listings(description,          +-----------------------+
+                size, max_price)
+        |
+        |-- results == [] --------> [ERROR] set session["error"]
+        |                                   RETURN early (stop here)
+        |
+        |-- results == [item, ...]
+        |
+        v
+selected_item = results[0]
+        |
+        v
+suggest_outfit(selected_item, wardrobe)
+   (empty wardrobe -> general advice branch, still returns a string)
+        |
+        v
+session["outfit_suggestion"] = "..."
+        |
+        v
+create_fit_card(outfit_suggestion, selected_item)
+   (empty outfit -> returns error string, no crash)
+        |
+        v
+session["fit_card"] = "..."
+        |
+        v
+RETURN session -> app.py maps to 3 output panels
 Error branch: the only early termination is the empty-search branch, which sets session["error"] and returns before suggest_outfit. Every other failure is handled inside a tool and still returns a usable string, so the loop continues.
 
 
 AI Tool Plan
 
-Milestone 3 — Individual tool implementations (using Claude):
+Milestone 3 — Individual tool implementations:
+
+For each tool I'll write the core logic myself first, then use Claude to check my implementation against the spec and catch edge cases I may have missed.
 
 
-search_listings: I'll give Claude the Tool 1 block above (inputs, return value, the "how matching works" notes, failure mode) plus the load_listings() docstring, and ask it to implement the function in tools.py. Verify before trusting: confirm it (a) filters by max_price and size only when they're not None, (b) does loose case-insensitive size matching and strips parentheticals, (c) drops zero-score listings, (d) returns [] not None on no match. Then run it on 3 queries including the impossible "designer ballgown" / XXS / $5.
-suggest_outfit: give Claude the Tool 2 block + the wardrobe schema. Expect a function that branches on empty wardrobe["items"] and calls llama-3.3-70b-versatile. Verify: run once with get_example_wardrobe() (should name real pieces) and once with get_empty_wardrobe() (should give general advice, not crash).
-create_fit_card: give Claude the Tool 3 block. Verify: run the same input 3×, confirm captions differ (bump temperature if not), and confirm create_fit_card("", item) returns an error string, not an exception.
+search_listings: I'll write the filtering and scoring logic myself — price and size filtering are straightforward conditionals, and the keyword scoring is a loop over tokens. Once I have a working draft I'll ask Claude to review whether the size normalization handles cases like "S/M" and "XL (oversized)" correctly. I'll test it manually with 3 queries before trusting any suggested changes: a normal match, a size-filtered match, and the impossible "designer ballgown / XXS / $5" no-results case.
+suggest_outfit: I'll write the branching logic and the prompt myself — the empty-wardrobe check is a simple if, and I know what I want the LLM to produce. I'll ask Claude to review my Groq API call syntax if I get stuck on the SDK, not to write the whole function. I'll verify by running it once with get_example_wardrobe() (output should name actual wardrobe pieces) and once with get_empty_wardrobe() (should give general advice, not crash).
+create_fit_card: I'll write the prompt and the empty-string guard myself. If the captions come out sounding too formal or repetitive, I'll ask Claude for suggestions on prompt phrasing to make them more casual and varied. I'll run the same input 3 times to confirm variability before moving on.
 
 
-Milestone 4 — Planning loop and state management (using Claude):
+Milestone 4 — Planning loop and state management:
 
-
-I'll paste the Architecture diagram, the Planning Loop section, and the State Management section, and ask Claude to implement run_agent() following the numbered steps. Verify before trusting: confirm it branches on the empty search_results (early return, no suggest_outfit call), stores values in the session dict rather than passing through local variables, and that session["selected_item"] is the exact dict handed to suggest_outfit. I'll print the session after both a happy-path and a no-results query to confirm. For query parsing I'll start with the regex approach; if it mis-parses sizes I'll fall back to a one-shot LLM parse and document the switch.
-
+I'll implement run_agent() myself following the numbered steps in the Planning Loop section above — the logic is a straight sequence of calls with one branch, which I can write directly. I'll use Claude to sanity-check that my session dict is being updated correctly at each step (i.e. that selected_item is the actual dict from search results, not a copy or re-query). If the regex query parser mis-handles an edge case I'll ask Claude for a fix to that specific pattern rather than rewriting the whole parser. I'll verify the branch works by printing session at the end of both a happy-path run and a no-results run before wiring it into app.py.
 
 
 A Complete Interaction (Step by Step)
